@@ -21,8 +21,8 @@ const loadImage = (url) => {
     return new Promise((resolve, reject) => {
         const img = new Image();
         img.crossOrigin = "anonymous";
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
+        img.onload = () => resolve({ success: true, img });
+        img.onerror = () => resolve({ success: false, url });
         img.src = url;
     });
 };
@@ -41,8 +41,18 @@ const download = async () => {
             throw new Error("jsPDF is not loaded");
         }
 
-        const imgs = await Promise.all(urls.map(url => loadImage(url)));
-        console.log("Images loaded successfully");
+        const results = await Promise.all(urls.map(url => loadImage(url)));
+        const failedImages = results.filter(r => !r.success);
+
+        if (failedImages.length > 0) {
+            const skipConfirm = confirm(`Failed to load ${failedImages.length} images. Do you want to continue without these images?`);
+            if (!skipConfirm) {
+                throw new Error(`Failed to load images: ${failedImages.map(f => f.url).join(', ')}`);
+            }
+        }
+
+        const successfulImages = results.filter(r => r.success).map(r => r.img);
+        console.log(`${successfulImages.length} images loaded successfully`);
 
         var doc = new jspdf.jsPDF({
             orientation: "p",
@@ -52,7 +62,7 @@ const download = async () => {
         });
         doc = doc.deletePage(1);
 
-        for (const img of imgs) {
+        for (const img of successfulImages) {
             doc.addPage([img.width, img.height], "p");
             doc.addImage(img, "JPEG", 0, 0, img.width, img.height, "", "FAST");
             console.log("Image added to PDF");
