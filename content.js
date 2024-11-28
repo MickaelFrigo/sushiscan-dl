@@ -1,3 +1,5 @@
+const browserAPI = chrome || browser;
+
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -15,47 +17,140 @@ const imagesUrl = async () => {
     }
     return { name: name, urls: ans };
 };
-const download = async () => {
-    const imgs = new Array();
-    const { name, urls } = await imagesUrl();
-    for (const url of urls) {
-        var img = new Image();
-        img.loaded = new Promise((resolve) => {
-            img.onload = resolve;
-        });
+const loadImage = (url) => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
         img.src = url;
-        imgs.push(img);
-    }
-
-    var doc = new jspdf.jsPDF({
-        orientation: "p",
-        unit: "px",
-        format: "a4",
-        compress: true,
     });
-    doc = doc.deletePage(1);
-    for (const img of imgs) {
-        await img.loaded;
-        doc.addPage([img.width, img.height], "p");
-        doc.addImage(img, "JPEG", 0, 0, img.width, img.height, "", "FAST");
-    }
+};
+const download = async () => {
+    try {
+        const downloadButton = document.querySelector('.download-button');
+        downloadButton.innerHTML = "Downloading...";
+        downloadButton.style.backgroundColor = "#cccccc";
+        downloadButton.style.cursor = "wait";
 
-    var reader = new FileReader();
-    reader.readAsDataURL(doc.output("blob"));
-    reader.onloadend = function () {
-        browser.runtime.sendMessage({
-            dataURL: reader.result,
-            name: name,
+        console.log("Starting download...");
+        const { name, urls } = await imagesUrl();
+        console.log("URLs retrieved:", urls);
+
+        if (typeof jspdf === 'undefined') {
+            throw new Error("jsPDF is not loaded");
+        }
+
+        const imgs = await Promise.all(urls.map(url => loadImage(url)));
+        console.log("Images loaded successfully");
+
+        var doc = new jspdf.jsPDF({
+            orientation: "p",
+            unit: "px",
+            format: "a4",
+            compress: true,
         });
-    };
+        doc = doc.deletePage(1);
+
+        for (const img of imgs) {
+            doc.addPage([img.width, img.height], "p");
+            doc.addImage(img, "JPEG", 0, 0, img.width, img.height, "", "FAST");
+            console.log("Image added to PDF");
+        }
+
+        console.log("PDF creation completed");
+
+        doc.save(`${name}.pdf`);
+
+        downloadButton.innerHTML = "Downloaded!";
+        downloadButton.style.backgroundColor = "#90EE90";
+        downloadButton.style.cursor = "pointer";
+        
+        setTimeout(() => {
+            downloadButton.innerHTML = "Download";
+            downloadButton.style.backgroundColor = "#f0f0f0";
+        }, 3000);
+
+    } catch (error) {
+        const downloadButton = document.querySelector('.download-button');
+        downloadButton.innerHTML = "Error!";
+        downloadButton.style.backgroundColor = "#ffcccc";
+        
+        setTimeout(() => {
+            downloadButton.innerHTML = "Download";
+            downloadButton.style.backgroundColor = "#f0f0f0";
+        }, 3000);
+
+        console.error("Download error:", error);
+        alert("Download error: " + error.message);
+    }
+};
+
+const isValidPage = () => {
+    return window.location.href.includes('sushiscan.net') && 
+           document.getElementsByClassName("ts-main-image").length > 0;
 };
 
 const addButton = () => {
-    const toolbar = document.getElementsByClassName("chnav ctop")[0];
+    console.log("Attempting to add button...");
+    
+    if (!isValidPage()) {
+        console.log("Invalid page for button addition");
+        return;
+    }
+
+    const toolbar = document.querySelector(".chnav.ctop");
+    console.log("Toolbar found:", toolbar);
+    
+    if (!toolbar) {
+        console.log("Toolbar not found, retrying in 1 second");
+        setTimeout(addButton, 1000);
+        return;
+    }
+
+    if (document.querySelector('.download-button')) {
+        console.log("Button already exists");
+        return;
+    }
 
     let div = document.createElement("div");
-    toolbar.insertBefore(div, toolbar.firstChild);
+    div.className = "chap-btn download-button";
+    div.style.cursor = "pointer";
+    div.style.padding = "5px 10px";
+    div.style.margin = "0 5px";
+    div.style.backgroundColor = "#f0f0f0";
+    div.style.borderRadius = "4px";
+    div.style.userSelect = "none";
     div.innerHTML = "Download";
-    div.onclick = download;
+
+    div.addEventListener("mouseover", () => {
+        div.style.backgroundColor = "#e0e0e0";
+    });
+    
+    div.addEventListener("mouseout", () => {
+        div.style.backgroundColor = "#f0f0f0";
+    });
+    
+    div.addEventListener("click", download);
+
+    toolbar.insertBefore(div, toolbar.firstChild);
+    console.log("Button added successfully");
 };
-addButton();
+
+const observer = new MutationObserver((mutations, obs) => {
+    if (isValidPage()) {
+        addButton();
+    }
+});
+
+observer.observe(document.body, {
+    childList: true,
+    subtree: true
+});
+
+console.log("Initializing script...");
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', addButton);
+} else {
+    addButton();
+}
