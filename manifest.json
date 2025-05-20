@@ -11,6 +11,7 @@
             ],
             "js": [
                 "jspdf.umd.min.js",
+                "jszip.min.js",
                 "content.js"
             ]
         }

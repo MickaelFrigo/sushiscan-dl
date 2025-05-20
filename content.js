@@ -4,21 +4,19 @@ function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 const imagesUrl = async () => {
-    let ans = new Array();
+    let ans = [];
     let imgs = document.getElementsByClassName("ts-main-image");
     let url = imgs[0].src;
     let name = url.split("/").pop().split("-")[0];
-    if ("-001.jpg" !== url.slice(-8)) {
-        throw "The first image should end with -001.jpg";
+
+    for (let i = 0; i < imgs.length; i++) {
+        ans.push(imgs[i].src);
     }
-    for (let i = 1; i < imgs.length + 1; i++) {
-        let newUrl = url.slice(0, -7) + ("00" + i).slice(-3) + ".jpg";
-        ans.push(newUrl);
-    }
+
     return { name: name, urls: ans };
 };
 const loadImage = (url) => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.onload = () => resolve({ success: true, img });
@@ -57,16 +55,35 @@ const download = async () => {
         var doc = new jspdf.jsPDF({
             orientation: "p",
             unit: "px",
-            format: "a4",
             compress: true,
         });
         doc = doc.deletePage(1);
 
-        for (const img of successfulImages) {
-            doc.addPage([img.width, img.height], "p");
-            doc.addImage(img, "JPEG", 0, 0, img.width, img.height, "", "FAST");
-            console.log("Image added to PDF");
+        for (let i = 0; i < successfulImages.length; i++) {
+            const img = successfulImages[i];
+            
+            // Déterminer si c'est une double page (plus large que haute)
+            const isDoublePage = img.naturalWidth > img.naturalHeight;
+            
+            // Définir l'orientation en fonction du ratio d'aspect
+            const orientation = isDoublePage ? "l" : "p";
+            
+            // Calculer les dimensions optimales
+            const pageWidth = isDoublePage ? img.naturalWidth : img.naturalWidth;
+            const pageHeight = isDoublePage ? img.naturalHeight : img.naturalHeight;
+            
+            // Ajouter une page avec les dimensions exactes de l'image
+            doc.addPage([pageWidth, pageHeight], orientation);
+            
+            // Ajouter l'image à la page (sans mise à l'échelle)
+            doc.addImage(img, "JPEG", 0, 0, pageWidth, pageHeight, "", "FAST");
+            console.log(`Image ${i+1} added to PDF with dimensions: ${pageWidth}x${pageHeight}, orientation: ${orientation}`);
+            
+            // Mettre à jour la barre de progression
+            updateProgress(((i + 1) / successfulImages.length) * 100);
         }
+
+        removeProgressBar(); // Supprime la barre de progression une fois terminé
 
         console.log("PDF creation completed");
 
@@ -147,6 +164,28 @@ const addButton = () => {
     console.log("Button added successfully");
 };
 
+const autoScroll = async () => {
+    const scrollHeight = document.body.scrollHeight;
+    let currentPosition = 0;
+
+    while (currentPosition < scrollHeight) {
+        window.scrollBy(0, 1000); // Défilement plus rapide (1000px au lieu de 500px)
+        currentPosition += 1000;
+        await sleep(300); // Réduisez le délai à 300ms
+    }
+
+    // Attendez que toutes les images soient chargées
+    const imgs = document.getElementsByClassName("ts-main-image");
+    for (let img of imgs) {
+        while (!img.complete) {
+            await sleep(100); // Attendez que chaque image soit complètement chargée
+        }
+    }
+
+    window.scrollTo(0, 0); // Retournez en haut de la page
+    console.log("Auto-scroll completed. All images should be loaded.");
+};
+
 const observer = new MutationObserver((mutations, obs) => {
     if (isValidPage()) {
         addButton();
@@ -164,3 +203,26 @@ if (document.readyState === 'loading') {
 } else {
     addButton();
 }
+
+const updateProgress = (percentage) => {
+    let progressBar = document.querySelector('.progress-bar');
+    if (!progressBar) {
+        progressBar = document.createElement('div');
+        progressBar.className = 'progress-bar';
+        progressBar.style.position = 'fixed';
+        progressBar.style.top = '0';
+        progressBar.style.left = '0';
+        progressBar.style.width = '0%';
+        progressBar.style.height = '5px';
+        progressBar.style.backgroundColor = '#4caf50';
+        document.body.appendChild(progressBar);
+    }
+    progressBar.style.width = `${percentage}%`;
+};
+
+const removeProgressBar = () => {
+    const progressBar = document.querySelector('.progress-bar');
+    if (progressBar) {
+        progressBar.remove();
+    }
+};
